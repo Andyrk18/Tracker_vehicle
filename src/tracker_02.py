@@ -65,6 +65,9 @@ def process_video(file_path, target_fps,
             for track_id, xyxy in vehicles_t:
                 if show_window:
                     draw_frame(frame, track_id, xyxy)
+                if detect_occlusion(track_id, xyxy, frame_cnt):
+                    print(f"遮蔽：Track_ID　{track_id}, Frame {frame_cnt}")
+                    continue
             if save_video:
                 video_writer.write(frame)
             # フレーム表示
@@ -112,6 +115,40 @@ def process_frame(cap, frame_skip_interval):
         cap.grab()  # フレームスキップ
     success, frame = cap.read()
     return success, frame
+
+def detect_occlusion(track_id, bbox, frame_cnt):
+    """遮蔽による不自然な形状を検知"""
+    global Tracked_Vehicles
+    if track_id not in Tracked_Vehicles or len(Tracked_Vehicles[track_id]['bbox_history']) < 2:
+        # 過去データが十分でない場合、遮蔽判定をスキップ
+        return False
+
+    # 最新の履歴データを取得
+    last_bbox = Tracked_Vehicles[track_id]['bbox_history'][-1]
+    second_last_bbox = Tracked_Vehicles[track_id]['bbox_history'][-2]
+
+    # 現在のバウンディングボックスの特徴量を計算
+    current_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+    current_aspect_ratio = (bbox[2] - bbox[0]) / max(1e-5, (bbox[3] - bbox[1]))
+
+    # 前回のフレームの特徴量を計算
+    last_area = (last_bbox[2] - last_bbox[0]) * (last_bbox[3] - last_bbox[1])
+    last_aspect_ratio = (last_bbox[2] - last_bbox[0]) / max(1e-5, (last_bbox[3] - last_bbox[1]))
+
+    # 面積と縦横比の変化率を計算
+    area_change = abs(current_area - last_area) / max(1e-5, last_area)
+    aspect_ratio_change = abs(current_aspect_ratio - last_aspect_ratio) / max(1e-5, last_aspect_ratio)
+
+    # 変化の閾値を設定
+    area_threshold = 0.1  # 面積が50%以上変化した場合
+    aspect_ratio_threshold = 0.1  # 縦横比が50%以上変化した場合
+
+    if area_change > area_threshold or aspect_ratio_change > aspect_ratio_threshold:
+        # 遮蔽の可能性を検知
+        print(f"遮蔽検知: Track ID {track_id}, フレーム {frame_cnt}")
+        return True
+
+    return False
 
 def perform_yolo_inference(frame):
     """YOLO推論の実行"""
