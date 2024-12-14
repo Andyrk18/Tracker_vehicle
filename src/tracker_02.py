@@ -1,180 +1,130 @@
-from collections import defaultdict, deque
-from pykalman import KalmanFilter
 import cv2
-import torch.cuda
-from ultralytics import YOLO
+from collections import defaultdict
 
+from ultralytics import YOLO
 import process_video as pv
 
-YOLO_Classes = [2]  # 2:car,l 3:motorcycle, 5:bus, 7:truck
 
-YOLO_Model = "../models/yolov8n.pt"
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL = YOLO(YOLO_Model)
-MODEL.to(device)
+# YOLO設定
+YOLO_CLASSES = [2]      # 検出対象
+YOLO_MODEL_PATH = "../models/yolov8n.pt"
+YOLO_MODEL = YOLO(YOLO_MODEL_PATH)
 
-Vehicle_Positions = defaultdict(list)
-Tracked_Vehicles = defaultdict(dict)
-Vehicle_Frame_Count = defaultdict(int)
-Last_Frame = {}
+# 設定
+SAVE_VIDEO = False      # 動画保存
+DISPLAY_VIDEO = True    # 動画表示
 
-save_video = False
+# データ構造
+tracked_data = defaultdict(list)
+predicted_boxes = {}
 
-def process_video(file_path, target_fps,
-                  show_window=False):
-    """動画フレームを読み込んで、YOLOで解析、結果をCSVに保存"""
-    cap, frame_skip_interval, video_writer = initialize_processing(file_path, target_fps, output_file=None)
-    frame_cnt = 0
-    retention_threshold = 100
-    frame_buffer = deque(maxlen=3)  # 直近3フレーム分のデータを保持するバッファ
-    success, sample_frame = cap.read()
-
-    if not success:
-        raise RuntimeError("動画の読み込みに失敗しました。")
-    frame_height, frame_width, _ = sample_frame.shape  # フレームサイズを取得
-    cap.release()
-    cap = pv.load_video(file_path)  # キャプチャを再初期化
-
-    if save_video:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 保存フォーマット（例: MP4）
-        video_writer = cv2.VideoWriter("../../data/proccessed_03.mp4", fourcc, target_fps, (1920, 1080))
+def track_video(file_path, target_fps, output_path=None):
+    """動画を処理し、検出結果を保存"""
+    global predicted_boxes
+    cap, frame_skip, video_writer = pv.initialize_processing(file_path, target_fps, output_path)
+    frame_count = 0
 
     while cap.isOpened():
-        success, frame = pv.process_frame(cap, frame_skip_interval)
+        success, frame = pv.process_frame(cap, frame_skip)
         if not success:
             break
-        frame_cnt += 1
         # YOLO推論
-        frame_vehicles = pv.perform_yolo_inference(frame, MODEL, YOLO_Classes)
-        # バッファに追加
-        frame_buffer.append(frame_vehicles)
-        # バッファが満杯の場合に補完を実行
-        if len(frame_buffer) == 3:
-            vehicles_t_minus_1 = frame_buffer[0]
-            vehicles_t = frame_buffer[1]
-            vehicles_t_plus_1 = frame_buffer[2]
-            # 補完ロジックの実行
-            vehicles_t = check_frames(vehicles_t_minus_1, vehicles_t, vehicles_t_plus_1, frame_cnt)
-            # 補完済みのデータでフレームtを処理
-            for track_id, xyxy in vehicles_t:
-                if show_window:
-                    pv.draw_frame(frame, track_id, xyxy)
-                if detect_occlusion(track_id, xyxy, frame_cnt):
-                    print(f"遮蔽：Track_ID　{track_id}, Frame {frame_cnt}")
-                    continue
-            print(f"Frame {frame_cnt}, Vehicles: {frame_vehicles[0]}")
+        detections = pv.perform_yolo(frame, YOLO_MODEL, YOLO_CLASSES)
+        # 検出結果を保存
+        for track_id, bbox in detections:
+            tracked_data[track_id].append(bbox)
+        new_predicted_boxes = {}
+        for track_id in tracked_data.keys():
+            predicted_bbox = predict_next_bbox(tracked_data, track_id, num_frames=2)
+            if predicted_bbox:
+                new_predicted_boxes[track_id] = predicted_bbox
 
-            if save_video:
-                video_writer.write(frame)
-            # フレーム表示
-            if show_window:
-                cv2.imshow("検出結果", frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-        # 古いトラックの削除
-        pv.remove_old_tracks(Vehicle_Positions, Tracked_Vehicles, Vehicle_Frame_Count, Last_Frame, frame_cnt,
-                             retention_threshold)
-    if save_video:
-        video_writer.release()
+        # 検出結果を描画
+        if DISPLAY_VIDEO:
+            # frame = pv.draw_detections(frame, detections)
+            frame = draw_detections_with_predictions(frame ,detections, predicted_boxes)
+            cv2.imshow("Detection", frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+        predicted_boxes = new_predicted_boxes
+
+        # 動画に書き込み（オプション）
+        if SAVE_VIDEO and video_writer:
+            video_writer.write(frame)
+
+        frame_count += 1
+
     cap.release()
+    if video_writer:
+        video_writer.release()
     cv2.destroyAllWindows()
 
+    return tracked_data
 
-def initialize_processing(file_path, target_fps, output_file):
-    """初期化処理：動画読み込み、パラメータ設定"""
-    cap = pv.load_video(file_path)
-    original_fps = pv.get_fps(cap)
-    frame_skip_interval = pv.calculate_frame_skip_interval(original_fps, target_fps)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(output_file, fourcc, target_fps, (width, height))
-    return cap, frame_skip_interval, video_writer
+def predict_next_bbox(tracked_data, track_id, num_frames=3):
+    """T+1フレームの位置を予測"""
+    if track_id not in tracked_data or len(tracked_data[track_id]) < num_frames:
+        if track_id not in tracked_data:
+            print(f"未検出：{track_id}")
+        elif len(tracked_data[track_id]) < num_frames:
+            print(f"データ不足：{track_id}")
+        return None
+    recent_bboxes = tracked_data[track_id][-num_frames:]  # 最新のnum_frames分を取得
+    deltas = [
+        [recent_bboxes[i][j] - recent_bboxes[i - 1][j] for j in range(4)]
+        for i in range(1, num_frames)
+    ]
+    avg_delta = [sum(delta[j] for delta in deltas) / len(deltas) for j in range(4)]
+    # 予測
+    last_bbox = recent_bboxes[-1]
+    predicted_bbox = [last_bbox[j] + avg_delta[j] for j in range(4)]
+    return predicted_bbox
 
-def initialize_kalman_filter():
-    """カルマンフィルタの初期化"""
-    return KalmanFilter(
-        initial_state_mean=[0, 0, 0, 0],
-        transition_matrices=[[1, 0, 0, 0],
-                             [0, 1, 0, 0],
-                             [0, 0, 1, 0],
-                             [0, 0, 0, 1]],
-        observation_matrices=[[1, 0, 0, 0],
-                              [0, 1, 0, 0],
-                              [0, 0, 1, 0],
-                              [0, 0, 0, 1]]
-    )
+def evaluate_predictions(detections, predictions):
+    """予測と検出結果の一致率を評価"""
+    total = len(detections)
+    matched = 0
+    iou_threshold = 0.5
 
-def detect_occlusion(track_id, bbox, frame_cnt):
-    """遮蔽による不自然な形状を検知"""
-    global Tracked_Vehicles
-    if track_id not in Tracked_Vehicles or len(Tracked_Vehicles[track_id]['bbox_history']) < 2:
-        # print(f"{track_id} データ不足によりスキップ")
-        return False
-    last_bbox = Tracked_Vehicles[track_id]['bbox_history'][-1]  # 最新の履歴データを取得
-    # 現在と前回の面積, 縦横比の計算
-    current_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-    current_aspect_ratio = (bbox[2] - bbox[0]) / max(1e-5, (bbox[3] - bbox[1]))
-    last_area = (last_bbox[2] - last_bbox[0]) * (last_bbox[3] - last_bbox[1])
-    last_aspect_ratio = (last_bbox[2] - last_bbox[0]) / max(1e-5, (last_bbox[3] - last_bbox[1]))
+    for track_id, actual_bbox in detections:
+        if track_id in predictions:
+            predicted_bbox = predictions[track_id]
+            iou = calculate_iou(actual_bbox, predicted_bbox)
+            if iou > iou_threshold:
+                matched += 1
+                print(f"Track ID {track_id}: IoU = {iou:.2f} -> Matched")
+            else:
+                print(f"Track ID {track_id}: IoU = {iou:.2f} -> Not Matched")
 
-    # 変化率計算
-    area_change = abs(current_area) / max(1e-5, last_area)
-    aspect_ratio_change = abs(current_aspect_ratio - last_aspect_ratio) / max(1e-5, last_aspect_ratio)
-    # デバッグログ
-    # print(f"ID:{track_id} A.{bbox},B.{last_bbox}")
+    match_rate = matched / total if total > 0 else 0
+    print(f"Match Rate: {match_rate:.2f}")
+    return match_rate
 
-    area_threshold = 0.01
-    aspect_ratio_threshold = 0.01
+def calculate_iou(box1, box2):
+    """IoU (Intersection over Union) を計算"""
+    x1_inter = max(box1[0], box2[0])
+    y1_inter = max(box1[1], box2[1])
+    x2_inter = min(box1[2], box2[2])
+    y2_inter = min(box1[3], box2[3])
 
-    if area_change > area_threshold or aspect_ratio_change > aspect_ratio_threshold:    # 遮蔽の可能性を検知
-        # print(f"遮蔽検知: Track ID {track_id}, フレーム {frame_cnt}")
-        return True
-    return False
+    inter_area = max(0, x2_inter - x1_inter) * max(0, y2_inter - y1_inter)
 
-def update_tracked_vehicles(frame_vehicles, frame_cnt):
-    """現在のフレームの情報をトラッキングデータに反映"""
-    global Tracked_Vehicles
-    for track_id, bbox in frame_vehicles:
-        if track_id not in Tracked_Vehicles:
-            Tracked_Vehicles[track_id] = {
-                'bbox_history': deque(maxlen=5),  # 履歴の保存（最大5フレーム）
-                'last_seen_frame': frame_cnt
-            }
-        Tracked_Vehicles[track_id]['bbox_history'].append(bbox)
-        Tracked_Vehicles[track_id]['last_seen_frame'] = frame_cnt
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
 
-def check_frames(vehicles_t_minus_1, vehicles_t, vehicles_t_plus_1, frame_cnt):
-    """フレーム間の補正"""
-    global Tracked_Vehicles
-    corrected_vehicles_t = vehicles_t.copy()
-    all_track_ids = {v[0] for v in vehicles_t_minus_1} | {v[0] for v in vehicles_t} | {v[0] for v in vehicles_t_plus_1}
+    union_area = box1_area + box2_area - inter_area
 
-    for track_id in all_track_ids:
-        if not any(v[0] == track_id for v in vehicles_t):
-            # フレームtに存在しない車両を補完
-            if track_id in Tracked_Vehicles:
-                last_bbox = Tracked_Vehicles[track_id]['bbox_history'][-1]
-                corrected_vehicles_t.append((track_id, last_bbox))
+    return inter_area / union_area if union_area > 0 else 0
 
-    # トラッキング情報を更新
-    update_tracked_vehicles(corrected_vehicles_t, frame_cnt)
-    return corrected_vehicles_t
 
-def complement_missing_vehicles(frame_buffer, current_frame_idx):
-    """見失われた車両を補完"""
-    current_frame_vehicles = frame_buffer[current_frame_idx]
-    for track_id, bbox in Vehicle_Positions.items():
-        if track_id not in current_frame_vehicles:
-            if Last_Frame[track_id] == current_frame_idx - 1:  # 直前のフレームで見つかっている場合
-                frame_buffer[current_frame_idx][track_id] = bbox[-1]
 
-def interpolate_bbox(bbox1, bbox2, alpha=0.5):
-    """加重線形補間"""
-    return [(1 - alpha) * bbox1[i] + alpha * bbox2[i] for i in range(4)]
 
 
 if __name__ == "__main__":
     input_file = "../videos/street1_sample_01.mp4"
-    # save_video = True
-    process_video(input_file, 5, True)
+    output_file = "../videos/output_video_01.mp4" if SAVE_VIDEO else None
+
+    data = track_video(input_file, target_fps=5, output_path=output_file)
+    # 結果を表示
+    print(f"Total Tracked Vehicles: {len(data)}")
