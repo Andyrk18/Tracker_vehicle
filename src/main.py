@@ -21,7 +21,7 @@ def main():
     original_fps = get_fps(cap)
     original_fps = 20
     target_fps = TARGET_FPS
-    frame_skip_interval = calculate_frame_skip_interval(20, target_fps)
+    frame_skip_interval = calculate_frame_skip_interval(original_fps, target_fps)
 
     tracked_data = {}
 
