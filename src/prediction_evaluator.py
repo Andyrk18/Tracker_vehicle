@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 
 def calculate_iou(box1, box2):
     """実測値と予測値からIoUを計算"""
@@ -33,15 +31,3 @@ def summarize_iou_results(iou_history):
     for track_id, iou_list in iou_history.items():
         average_iou = sum(iou_list) / len(iou_list) if iou_list else 0
         print(f"Track ID: {track_id}, Average IoU: {average_iou:.2f}")
-
-def evaluate_predictions(detections, predictions):
-    total = len(detections)
-    matched = 0
-    for track_id, actual_bbox in detections:
-        if track_id in predictions and predictions[track_id] is not None:
-            predicted_bbox = predictions[track_id]
-            iou = calculate_iou(actual_bbox, predicted_bbox)
-            if iou > 0.5:
-                matched += 1
-    match_rate = matched / total if total > 0 else 0
-    print(f"Match Rate: {match_rate:.2f}")
