@@ -18,3 +18,6 @@ def detect_aspect_ratio_anomaly(current_bbox, previous_bbox, aspect_ratio_thresh
     previous_aspect_ratio = (previous_bbox[2] - previous_bbox[0]) / max((previous_bbox[3] - previous_bbox[1]), 1e-5)
     aspect_ratio_change = abs(current_aspect_ratio - previous_aspect_ratio)
     return aspect_ratio_change > aspect_ratio_threshold
+
+def detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox, iou_threshold=0.5, ratio_threshold=0.2, area_threshold=0.2):
+    """異常検知を統合"""
