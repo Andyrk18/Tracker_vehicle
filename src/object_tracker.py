@@ -7,6 +7,7 @@ def update_tracked_data(tracked_data, detections):
         tracked_data[track_id].append(bbox)
 
 def predict_next_bbox(tracked_data, track_id, num_frames=2):
+    """線形補完を用いた次フレームの予測"""
     if len(tracked_data[track_id]) < num_frames:
         return None
     recent_bboxes = tracked_data[track_id][-num_frames:]
