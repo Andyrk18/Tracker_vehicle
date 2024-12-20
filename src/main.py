@@ -44,13 +44,13 @@ def main():
             frame = draw_detections_with_predictions(frame, detections, predictions)
         if SHOW_FRAME:
             cv2.imshow("Result", frame)
-            key =  cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
+            key = cv2.waitKey(1) & 0xFF
             if key == ord(' '):
                 pause = not pause
                 if pause:
-                    print(f" PAUSE: Frame-{frame_number}")
+                    print(f"PAUSE : Frame {frame_number}")
+            if key == ord('q'):
+                break
     cap.release()
     cv2.destroyAllWindows()
 
