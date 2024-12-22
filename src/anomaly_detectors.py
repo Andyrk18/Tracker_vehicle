@@ -1,5 +1,3 @@
-from numpy.ma.core import anomalies
-
 from prediction_evaluator import calculate_iou
 
 def detect_iou_anomaly(current_bbox, predicted_bbox, threshold=0.85):
@@ -38,5 +36,5 @@ def detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox, iou_t
         "Aspect Ratio Anomaly": aspect_ratio_anomaly
     }
     anomaly_count = sum(anomalies.values())
-    is_anomaly = anomaly_count >= 2     # Trueが２以上ならば
+    is_anomaly = anomaly_count >= 2     # Trueが２以上かどうか
     return is_anomaly, anomalies

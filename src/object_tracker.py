@@ -16,31 +16,19 @@ def predict_next_bbox(tracked_data, track_id, num_frames=2):
     predicted_bbox = [recent_bboxes[-1][j] + avg_delta[j] for j in range(4)]
     return predicted_bbox
 
-def predict_next_bbox_curve_fit(tracked_data, track_id, num_frames=3):
-    """2次近似曲線を使ったT+1フレームの予測"""
+def predict_next_bbox_quadratic(tracked_data, track_id, num_frames=3):
+    """二次補完を使用して次のフレームのバウンディングボックスを予測"""
+    # 過去のバウンディングボックス情報を取得
     if len(tracked_data[track_id]) < num_frames:
         return None
-
-    # 過去のバウンディングボックスを取得
-    recent_bboxes = np.array(tracked_data[track_id][-num_frames:])
-    # 各座標のフィッティング
-    x1 = recent_bboxes[:, 0]
-    y1 = recent_bboxes[:, 1]
-    x2 = recent_bboxes[:, 2]
-    y2 = recent_bboxes[:, 3]
-    # 2次近似曲線をフィッティング
-    t = np.arange(num_frames)
-    p_x1 = np.polyfit(t, x1, 2)
-    p_y1 = np.polyfit(t, y1, 2)
-    p_x2 = np.polyfit(t, x2, 2)
-    p_y2 = np.polyfit(t, y2, 2)
-    # 次のフレームの時間を計算
-    t_next = num_frames
-    # 次のフレームの座標を予測
-    predicted_bbox = [
-        np.polyval(p_x1, t_next),
-        np.polyval(p_y1, t_next),
-        np.polyval(p_x2, t_next),
-        np.polyval(p_y2, t_next),
-    ]
+    recent_bboxes = tracked_data[track_id][-num_frames:]  # 最新の num_frames 分の情報
+    frames = np.arange(-num_frames + 1, 1)  # フレーム番号（例: [-2, -1, 0]）
+    predicted_bbox = []
+    for j in range(4):  # x1, y1, x2, y2 の順に処理
+        coords = [recent_bboxes[i][j] for i in range(num_frames)]  # 各座標の値を取得
+        # 二次関数の係数を計算
+        coeffs = np.polyfit(frames, coords, 2)  # 2次多項式でフィット
+        # 次フレーム（フレーム番号 = 1）の値を予測
+        next_value = np.polyval(coeffs, 1)  # フレーム番号1を代入
+        predicted_bbox.append(next_value)
     return predicted_bbox
