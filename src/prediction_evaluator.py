@@ -1,4 +1,3 @@
-
 def calculate_iou(box1, box2):
     """実測値と予測値からIoUを計算"""
     x1_inter = max(box1[0], box2[0])
