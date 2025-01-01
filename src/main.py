@@ -4,7 +4,7 @@ from yolo_handler import load_yolo_model, perform_yolo, process_frame # YOLO実�
 from prediction import get_prediction_function, update_tracked_data # 予測
 import prediction_evaluator as pe                                   # 予測の評価と各基準の計算
 from anomaly_detectors import detect_combined_anomalies             # 異常検出
-from anomaly_handler import save_anomaly_frame, log_anomaly_info    # 異常判定時の保存
+import anomaly_handler as ah                                        # 異常判定時の保存
 from frame_visualizer import draw_detections_with_predictions       # フレーム表示
 from histogram_generator import save_all_histograms                 # ヒストグラム作成, 保存
 
@@ -12,7 +12,7 @@ import cv2
 import os
 
 # 設定
-INPUT_VIDEO_NAME = "minokamo_01.MOV"
+INPUT_VIDEO_NAME = "minokamo_03.mov"
 RESULTS_FOLDER = "../results"
 ANOMALIES_FOLDER = os.path.join(RESULTS_FOLDER, "anomalies")
 HISTOGRAMS_FOLDER = os.path.join(RESULTS_FOLDER, "histograms")
@@ -59,6 +59,7 @@ def main():
                 for track_id in tracked_data
             }
             # 各トラックIDに対して異常検知処理
+            anomalies = {}
             for track_id in tracked_data:
                 current_bbox = detection_dict.get(track_id)
                 predicted_bbox = predictions.get(track_id)
@@ -82,10 +83,13 @@ def main():
                     if aspect_ratio is not None:
                         metrics["aspect"][track_id].append(aspect_ratio)
                     # 異常検知
-                    is_anomaly, anomalies = detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox)
-                    if is_anomaly:
-                        save_anomaly_frame(frame, frame_number, track_id, ANOMALIES_FOLDER)
-                        log_anomaly_info(frame_number, track_id, current_bbox, predicted_bbox, anomalies)
+                    is_anomaly, _ = detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox)
+                    anomalies[track_id] = is_anomaly
+                # 異常時の置き換え処理
+                updated_detections = ah.replace_with_prediction(detection_dict, predictions, anomalies)
+                print(type(updated_detections))
+                update_tracked_data(tracked_data, updated_detections)
+
             # フレームの描画
             frame = draw_detections_with_predictions(frame, detections, predictions)
         # フレームの表示
