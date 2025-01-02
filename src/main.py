@@ -12,12 +12,12 @@ import cv2
 import os
 
 # 設定
-INPUT_VIDEO_NAME = "minokamo_03.mov"
+INPUT_VIDEO_NAME = "minokamo_06.mov"
 RESULTS_FOLDER = "../results"
 ANOMALIES_FOLDER = os.path.join(RESULTS_FOLDER, "anomalies")
 HISTOGRAMS_FOLDER = os.path.join(RESULTS_FOLDER, "histograms")
 
-TARGET_FPS = 2
+TARGET_FPS = 4
 
 PREDICTION_METHOD = "linear"        # 線形:"linear", 曲線:"quadratic", カルマン:"kalman"
 
@@ -27,6 +27,8 @@ SAVE_VIDEO = False
 YOLO_MODEL_PATH = "../models/yolov8x.pt"
 YOLO_CLASSES = [2]
 YOLO_MODEL = load_yolo_model(YOLO_MODEL_PATH)
+
+MAX_MISSED_FRAME = 5
 
 def main():
     os.makedirs(ANOMALIES_FOLDER, exist_ok=True)
@@ -39,6 +41,7 @@ def main():
     frame_skip_interval = calculate_frame_skip_interval(original_fps, TARGET_FPS)
 
     tracked_data = {}
+    missed_frames = {}
     metrics = {"iou":{}, "area":{}, "aspect":{}}    # 初期化
     frame_number = 0
     pause = False
@@ -61,6 +64,17 @@ def main():
             # 各トラックIDに対して異常検知処理
             anomalies = {}
             for track_id in tracked_data:
+                # 各トラックIDに対して未検出フレームをカウント
+                if track_id not in detection_dict:  # 現在検出されていない場合
+                    missed_frames[track_id] = missed_frames.get(track_id, 0) + 1
+                    if missed_frames[track_id] > MAX_MISSED_FRAME:
+                        print(f"Track ID {track_id} removed after {MAX_MISSED_FRAME} missed frames")
+                        del tracked_data[track_id]  # `tracked_data`から削除
+                        del missed_frames[track_id]  # `missed_frames`からも削除
+                        continue  # 次のトラックIDの処理に移る
+                else:
+                    missed_frames[track_id] = 0  # 検出された場合はカウンタをリセット
+
                 current_bbox = detection_dict.get(track_id)
                 predicted_bbox = predictions.get(track_id)
                 previous_bbox = (
@@ -87,7 +101,6 @@ def main():
                     anomalies[track_id] = is_anomaly
                 # 異常時の置き換え処理
                 updated_detections = ah.replace_with_prediction(detection_dict, predictions, anomalies)
-                print(type(updated_detections))
                 update_tracked_data(tracked_data, updated_detections)
 
             # フレームの描画
