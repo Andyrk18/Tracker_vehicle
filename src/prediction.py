@@ -1,27 +1,27 @@
 import numpy as np
 
 
-def update_tracked_data(tracked_data, detections):
-    for track_id, bbox in detections:
-        if track_id not in tracked_data:
-            tracked_data[track_id] = []
-        tracked_data[track_id].append(bbox)
-
 def predict_bbox_linear(tracked_data, track_id, num_frames=2):
     """線形補完を用いた次フレームの予測"""
-    if len(tracked_data[track_id]) < num_frames:
-        return None
+    # print(num_frames)
+    if track_id not in tracked_data or len(tracked_data[track_id]) < num_frames:
+        return None     # データが不足している場合, 予測不可
     recent_bboxes = tracked_data[track_id][-num_frames:]
+    if any(bbox is None for bbox in recent_bboxes):
+        return None     # Noneが含まれている場合, 予測不可
     deltas = [recent_bboxes[i + 1][j] - recent_bboxes[i][j] for i in range(num_frames - 1) for j in range(4)]
     avg_delta = [sum(deltas[i::4]) / (num_frames - 1) for i in range(4)]
     predicted_bbox = [recent_bboxes[-1][j] + avg_delta[j] for j in range(4)]
     return predicted_bbox
 
-def predict_bbox_quadratic(tracked_data, track_id, num_frames=3):
+def predict_bbox_quadratic(tracked_data, track_id, num_frames=10):
     """二次補完を使用して次のフレームのバウンディングボックスを予測"""
-    if len(tracked_data[track_id]) < num_frames:
-        return None
+    # print(num_frames)
+    if track_id not in tracked_data or len(tracked_data[track_id]) < num_frames:
+        return None     # データが不足している場合, 予測不可
     recent_bboxes = tracked_data[track_id][-num_frames:]
+    if any(bbox is None for bbox in recent_bboxes):
+        return None     # Noneが含まれている場合, 予測不可
     frames = np.arange(-num_frames + 1, 1)  # フレーム番号（例: [-2, -1, 0]）
     predicted_bbox = []
     for j in range(4):                              # x1, y1, x2, y2 の順に処理

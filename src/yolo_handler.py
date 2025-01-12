@@ -23,3 +23,20 @@ def perform_yolo(frame, model, classes=None, conf=0.3):
             detections.append((track_id, xyxy.tolist()))
     return detections
 
+def update_tracked_data(tracked_data, detections):
+    for track_id, bbox in detections:
+        if track_id not in tracked_data:
+            tracked_data[track_id] = []
+        tracked_data[track_id].append(bbox)
+
+def process_frame_data(frame, model, classes, tracked_data, predict_bbox):
+    # YOLOによる検出
+    detections = perform_yolo(frame, model, classes)
+    detection_dict = {track_id: bbox for track_id, bbox in detections}  # リストを辞書型に変換
+    update_tracked_data(tracked_data, detections)
+    # 予測
+    predictions = {
+        track_id: predict_bbox(tracked_data, track_id, 10)
+        for track_id in tracked_data
+    }
+    return detection_dict, predictions
