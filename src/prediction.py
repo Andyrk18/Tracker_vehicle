@@ -1,13 +1,15 @@
 import numpy as np
 
 
-def predict_bbox_linear(tracked_data, track_id, num_frames=2):
+def predict_bbox_linear(tracked_data, track_id, num_frames=4):
     """線形補完を用いた次フレームの予測"""
-    # print(num_frames)
     if track_id not in tracked_data or len(tracked_data[track_id]) < num_frames:
+        print(f"データ不足：{track_id}")
         return None     # データが不足している場合, 予測不可
     recent_bboxes = tracked_data[track_id][-num_frames:]
+    # print(f"ID-{track_id}, 参照データ：{recent_bboxes}")
     if any(bbox is None for bbox in recent_bboxes):
+        print(f"Noneが含まれている：{track_id}")
         return None     # Noneが含まれている場合, 予測不可
     deltas = [recent_bboxes[i + 1][j] - recent_bboxes[i][j] for i in range(num_frames - 1) for j in range(4)]
     avg_delta = [sum(deltas[i::4]) / (num_frames - 1) for i in range(4)]
@@ -16,11 +18,12 @@ def predict_bbox_linear(tracked_data, track_id, num_frames=2):
 
 def predict_bbox_quadratic(tracked_data, track_id, num_frames=10):
     """二次補完を使用して次のフレームのバウンディングボックスを予測"""
-    # print(num_frames)
     if track_id not in tracked_data or len(tracked_data[track_id]) < num_frames:
+        print(f"データ不足；{track_id}")
         return None     # データが不足している場合, 予測不可
     recent_bboxes = tracked_data[track_id][-num_frames:]
     if any(bbox is None for bbox in recent_bboxes):
+        print(f"Noneが含まれている：{track_id}")
         return None     # Noneが含まれている場合, 予測不可
     frames = np.arange(-num_frames + 1, 1)  # フレーム番号（例: [-2, -1, 0]）
     predicted_bbox = []

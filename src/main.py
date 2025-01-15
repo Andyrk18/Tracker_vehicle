@@ -1,14 +1,15 @@
 import os
 import cv2
 
-from load_video import load_video                                               # 動画の読み込み
-from get_fps import get_fps, calculate_frame_skip_interval                      # フレームスキップ関連
-from yolo_handler import load_yolo_model, process_frame, process_frame_data     # YOLO実行関連
-from prediction import get_prediction_function                                  # 予測
-from anomaly_detectors import detect_combined_anomalies                         # 異常検出
-import anomaly_handler as anomaly                                               # 異常判定時
-from frame_visualizer import draw_detections_with_predictions                   # フレーム表示
-from histogram_generator import save_all_histograms, update_metrics             # ヒストグラム作成, 保存
+from src.load_video import load_video                                               # 動画の読み込み
+from src.get_fps import get_fps, calculate_frame_skip_interval                      # フレームスキップ関連
+from src.yolo_handler import load_yolo_model, process_frame, process_frame_data     # YOLO実行関連
+from src.prediction import get_prediction_function                                  # 予測
+from src.anomaly_detectors import detect_combined_anomalies                         # 異常検出
+import src.anomaly_handler as anomaly                                               # 異常判定時
+from src.frame_visualizer import draw_detections_with_predictions, display_frame    # フレーム表示
+from src.histogram_generator import save_all_histograms, update_metrics             # ヒストグラム作成, 保存
+import src.log as l                                                                 # log
 
 
 # 設定
@@ -52,8 +53,10 @@ def main():
             if not ret:
                 break
             frame_number += 1
+            print(f"=== Frame {frame_number} ===")
             # 検出と予測
             detection_dict, predictions = process_frame_data(frame, YOLO_MODEL, YOLO_CLASSES, tracked_data, predict_bbox)
+            l.log_predictions_and_detections(detection_dict, predictions)
             # 各トラックIDに対して異常検知処理
             anomalies = {}
             for track_id in list(tracked_data.keys()):
@@ -84,17 +87,13 @@ def main():
                 anomaly.handle_replace(detection_dict, predictions, anomalies, tracked_data)
             # フレームの描画
             frame = draw_detections_with_predictions(frame, detection_dict, predictions)
+            l.display_latest_tracked_data(tracked_data, frame_number)
         # フレームの表示
         if SHOW_FRAME:
-            cv2.imshow("Result", frame)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord(' '):
-                pause = not pause
-                if pause:
-                    print(f"PAUSE : Frame {frame_number}")
-            if key == ord('q'):
-                save_all_histograms(metrics, HISTOGRAMS_FOLDER)
-                print("強制終了しました。")
+            pause, should_exit = display_frame(
+                frame, frame_number, pause, metrics, HISTOGRAMS_FOLDER
+            )
+            if should_exit:
                 break
     save_all_histograms(metrics, HISTOGRAMS_FOLDER)     # ヒストグラムの作成と保存
     cap.release()
