@@ -7,20 +7,21 @@ from src.yolo_handler import load_yolo_model, process_frame, process_frame_data 
 from src.prediction import get_prediction_function                                  # 予測
 from src.anomaly_detectors import detect_combined_anomalies                         # 異常検出
 import src.anomaly_handler as anomaly                                               # 異常判定時
-from src.frame_visualizer import draw_detections_with_predictions, display_frame    # フレーム表示
+from src.frame_visualizer import annotate_frame_with_tracking, display_frame, draw_predictions, draw_tracking_data  # フレーム表示
 from src.histogram_generator import save_all_histograms, update_metrics             # ヒストグラム作成, 保存
 import src.log as l                                                                 # log
 
 
 # 設定
-INPUT_VIDEO_NAME = "minokamo_08_hide2.mp4"
+INPUT_VIDEO_NAME = "street1_sample_01.mp4"
+INPUT_VIDEO_NAME = "sample_hide_5.mp4"
 RESULTS_FOLDER = "../results"
 ANOMALIES_FOLDER = os.path.join(RESULTS_FOLDER, "anomalies")
 HISTOGRAMS_FOLDER = os.path.join(RESULTS_FOLDER, "histograms")
 
-TARGET_FPS = 5
+TARGET_FPS = 20
 
-PREDICTION_METHOD = "quadratic"        # 線形:"linear", 曲線:"quadratic", カルマン:"kalman"
+PREDICTION_METHOD = "linear"        # 線形:"linear", 曲線:"quadratic", カルマン:"kalman"
 
 SHOW_FRAME = True
 SAVE_VIDEO = False
@@ -29,7 +30,7 @@ YOLO_MODEL_PATH = "../models/yolov8x.pt"
 YOLO_CLASSES = [2]
 YOLO_MODEL = load_yolo_model(YOLO_MODEL_PATH)
 
-MAX_MISSED_FRAME = 5
+MAX_MISSED_FRAME = TARGET_FPS * 1.5
 
 def main():
     os.makedirs(ANOMALIES_FOLDER, exist_ok=True)
@@ -83,11 +84,20 @@ def main():
                     # 異常検知
                     is_anomaly, _ = detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox)
                     anomalies[track_id] = is_anomaly
+
                 # 異常時の置き換え処理
                 anomaly.handle_replace(detection_dict, predictions, anomalies, tracked_data)
-            # フレームの描画
-            frame = draw_detections_with_predictions(frame, detection_dict, predictions)
+
+            # 確定情報の確認
             l.display_latest_tracked_data(tracked_data, frame_number)
+
+            # フレームの描画
+            if SHOW_FRAME or SAVE_VIDEO:
+                # frame = annotate_frame_with_tracking(frame, detection_dict, predictions, tracked_data)  # すべて描画
+                # frame = annotate_frame_with_tracking(frame, detection_dict)     # YOLO検出値のみ描画
+                # frame = draw_predictions(frame, predictions)                    # 予測値のみ描画
+                frame = draw_tracking_data(frame, tracked_data)                 # 確定値のみ描画
+
         # フレームの表示
         if SHOW_FRAME:
             pause, should_exit = display_frame(
@@ -95,7 +105,9 @@ def main():
             )
             if should_exit:
                 break
+
     save_all_histograms(metrics, HISTOGRAMS_FOLDER)     # ヒストグラムの作成と保存
+
     cap.release()
     cv2.destroyAllWindows()
 

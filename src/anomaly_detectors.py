@@ -36,7 +36,7 @@ def detect_aspect_ratio_anomaly(current_bbox, previous_bbox, threshold=0.90):
     # print(f"Aspect_Raito: {aspect_ratio}")      # debug
     return aspect_ratio < threshold
 
-def detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox, iou_threshold=0.90, area_threshold=0.90, ratio_threshold=0.90):
+def detect_combined_anomalies(current_bbox, previous_bbox, predicted_bbox, iou_threshold=0.98, area_threshold=0.98, ratio_threshold=0.98):
     """
     異常検知を統合
     異常があれば最終的にTrueを返す

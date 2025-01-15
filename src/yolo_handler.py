@@ -11,7 +11,7 @@ def process_frame(cap, frame_skip_interval):
     success, frame = cap.read()
     return success, frame
 
-def perform_yolo(frame, model, classes=None, conf=0.3):
+def perform_yolo(frame, model, classes=None, conf=0.5):
     """YOLOを使った推論"""
     results = model.track(frame, persist=True, conf=conf, classes=classes, verbose=False)
     detections = []
