@@ -36,7 +36,7 @@ def process_frame_data(frame, model, classes, tracked_data, predict_bbox):
     update_tracked_data(tracked_data, detections)
     # 予測
     predictions = {
-        track_id: predict_bbox(tracked_data, track_id, 10)
+        track_id: predict_bbox(tracked_data, track_id)
         for track_id in tracked_data
     }
     return detection_dict, predictions
